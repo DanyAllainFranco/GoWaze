@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}}</title>
+    
+    <!-- Meta tags para SEO -->
+    <meta name="description" content="GoWaze - Sistema de navegación con mapas reales en tiempo real">
+    <meta name="keywords" content="navegación, mapas, tráfico, reportes, tiempo real, GPS">
+    <meta name="author" content="GoWaze">
+    
+    <!-- Open Graph para redes sociales -->
+    <meta property="og:title" content="GoWaze - Navegación en Tiempo Real">
+    <meta property="og:description" content="Sistema de navegación con mapas reales y reportes de tráfico">
+    <meta property="og:type" content="website">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
+    
+    <!-- HTMX para interactividad -->
+    <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+    
+    <!-- Leaflet (OpenStreetMap) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+          crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""></script>
+    
+    <!-- Leaflet Routing Machine -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    
+    <!-- Estilos CSS principales -->
+    <link rel="stylesheet" href="/static/css/styles.css">
+    
+    <!-- Preload de recursos críticos -->
+    <link rel="preload" href="/static/js/app.js" as="script">
+    
+    <style rel="stylesheet" href="/static/css/index.css">    </style>
+</head>
+<body>
+    <!-- Indicador de estado de conexión -->
+    <div id="status" class="disconnected" title="Estado de conexión WebSocket">
+        <span id="status-text">Desconectado</span>
+        <span id="status-indicator">●</span>
+    </div>
+    
+    <!-- Contenedor principal -->
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🚗 GoWaze</h1>
+            <p>Sistema de navegación con mapas reales en tiempo real</p>
+            <small>Powered by OpenStreetMap, Leaflet & Go</small>
+        </header>
+
+        <!-- Panel de estadísticas -->
+        <section class="stats" aria-label="Estadísticas en tiempo real">
+            <div class="stat-card" title="Usuarios conectados actualmente">
+                <div class="stat-number" id="users-online" aria-live="polite">0</div>
+                <div>Usuarios Online</div>
+            </div>
+            <div class="stat-card" title="Reportes activos en las últimas 24 horas">
+                <div class="stat-number" id="total-reports" aria-live="polite">0</div>
+                <div>Reportes Activos</div>
+            </div>
+            <div class="stat-card" title="Puntos de monitoreo de tráfico">
+                <div class="stat-number" id="traffic-points" aria-live="polite">0</div>
+                <div>Puntos de Tráfico</div>
+            </div>
+        </section>
+
+        <!-- Layout principal: Mapa + Sidebar -->
+        <div class="main-layout">
+            <!-- Mapa Principal -->
+            <main class="map-section">
+                <div class="card">
+                    <h3>🗺️ Mapa Interactivo - OpenStreetMap</h3>
+                    <div class="map-container" role="img" aria-label="Mapa interactivo con reportes de tráfico">
+                        <div id="map"></div>
+                        <!-- Controles de mapa personalizados -->
+                        <div class="map-controls">
+                            <button type="button" 
+                                    class="map-control-btn" 
+                                    onclick="map.setView([14.0818, -87.2068], 13)" 
+                                    title="Centrar en San Pedro Sula">
+                                🏠
+                            </button>
+                            <button type="button" 
+                                    class="map-control-btn" 
+                                    onclick="centerOnUser()" 
+                                    title="Ir a mi ubicación">
+                                📍
+                            </button>
+                            <button type="button" 
+                                    class="map-control-btn" 
+                                    onclick="toggleFullscreen()" 
+                                    title="Pantalla completa">
+                                ⛶
+                            </button>
+                        </div>
+                    </div>
+                    <div class="map-instructions">
+                        <strong>Controles del Mapa:</strong>
+                        <ul>
+                            <li><strong>Click derecho:</strong> Seleccionar ubicación para reportar</li>
+                            <li><strong>Click simple:</strong> Agregar puntos de ruta (A → B)</li>
+                            <li><strong>Arrastrar:</strong> Mover el mapa</li>
+                            <li><strong>Scroll / Pinch:</strong> Zoom in/out</li>
+                            <li><strong>Doble click:</strong> Zoom rápido</li>
+                        </ul>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Sidebar con controles -->
+            <aside class="sidebar" role="complementary">
+                <!-- Panel de Usuario -->
+                <section class="card">
+                    <h3>👤 Tu Ubicación</h3>
+                    <form hx-post="/api/users" 
+                          hx-target="#user-status" 
+                          hx-swap="innerHTML"
+                          hx-indicator="#user-loading"
+                          aria-label="Actualizar ubicación del usuario">
+                        
+                        <div class="form-group">
+                            <label for="username">Nombre de Usuario:</label>
+                            <input type="text" 
+                                   id="username" 
+                                   name="username" 
+                                   placeholder="Ingresa tu nombre" 
+                                   required 
+                                   maxlength="50"
+                                   aria-describedby="username-help">
+                            <small id="username-help">Tu nombre será visible en los reportes</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="lat">Coordenadas:</label>
+                            <div class="coordinate-inputs">
+                                <input type="number" 
+                                       id="lat" 
+                                       name="lat" 
+                                       step="0.000001" 
+                                       value="14.0818" 
+                                       placeholder="Latitud" 
+                                       required
+                                       min="-90"
+                                       max="90">
+                                <input type="number" 
+                                       id="lng" 
+                                       name="lng" 
+                                       step="0.000001" 
+                                       value="-87.2068" 
+                                       placeholder="Longitud" 
+                                       required
+                                       min="-180"
+                                       max="180">
+                            </div>
+                        </div>
+                        
+                        <div class="button-group">
+                            <button type="submit" class="btn btn-primary">
+                                📍 Actualizar Ubicación
+                            </button>
+                            <button type="button" class="btn btn-secondary" onclick="getLocation()">
+                                🌍 GPS
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <div id="user-loading" class="htmx-indicator loading">Actualizando ubicación...</div>
+                    <div id="user-status" aria-live="polite"></div>
+                </section>
+
+                <!-- Búsqueda de Lugares -->
+                <section class="card">
+                    <h3>🔍 Buscar Lugar</h3>
+                    <form onsubmit="event.preventDefault(); searchPlace();" aria-label="Buscar lugares">
+                        <div class="form-group">
+                            <label for="search-input">Buscar ubicación:</label>
+                            <input type="text" 
+                                   id="search-input" 
+                                   placeholder="Ej: San Pedro Sula, Honduras"
+                                   maxlength="100"
+                                   aria-describedby="search-help">
+                            <small id="search-help">Busca cualquier lugar del mundo</small>
+                        </div>
+                        <button type="submit" class="btn btn-secondary">
+                            🔍 Buscar
+                        </button>
+                    </form>
+                    <div id="search-results" aria-live="polite"></div>
+                </section>
+
+                <!-- Panel de Reportes -->
+                <section class="card">
+                    <h3>🚨 Crear Reporte</h3>
+                    <form hx-post="/api/reports" 
+                          hx-target="#reports-container" 
+                          hx-swap="innerHTML"
+                          hx-indicator="#report-loading"
+                          aria-label="Crear nuevo reporte de tráfico">
+                        
+                        <div class="form-group">
+                            <label for="report-type">Tipo de Reporte:</label>
+                            <select id="report-type" name="type" required aria-describedby="type-help">
+                                <option value="">Selecciona un tipo...</option>
+                                <option value="accident">🚗 Accidente</option>
+                                <option value="police">👮 Control Policial</option>
+                                <option value="traffic">🚦 Congestión de Tráfico</option>
+                                <option value="hazard">⚠️ Peligro en la Vía</option>
+                            </select>
+                            <small id="type-help">Selecciona el tipo de incidente</small>
+                        </div>
+                        
+                        <!-- Coordenadas ocultas -->
+                        <input type="hidden" id="report-lat" name="lat" value="14.0818">
+                        <input type="hidden" id="report-lng" name="lng" value="-87.2068">
+                        
+                        <div class="form-group">
+                            <label for="description">Descripción:</label>
+                            <textarea id="description" 
+                                      name="description" 
+                                      rows="3" 
+                                      placeholder="Describe lo que está pasando..."
+                                      maxlength="200"
+                                      aria-describedby="desc-help"></textarea>
+                            <small id="desc-help">Máximo 200 caracteres</small>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-danger">
+                            📢 Enviar Reporte
+                        </button>
+                    </form>
+                    
+                    <div id="report-loading" class="htmx-indicator loading">Enviando reporte...</div>
+                    <div class="report-tip">
+                        💡 <strong>Tip:</strong> Haz click derecho en el mapa para seleccionar la ubicación exacta
+                    </div>
+                </section>
+
+                <!-- Panel de Rutas -->
+                <section class="card">
+                    <h3>🧭 Navegación</h3>
+                    <div class="route-controls">
+                        <button type="button" class="btn btn-secondary" onclick="calculateRoute()" title="Calcular ruta entre dos puntos">
+                            📍 Calcular Ruta
+                        </button>
+                        <button type="button" class="btn btn-danger" onclick="clearRoute()" title="Limpiar ruta actual">
+                            🗑️ Limpiar
+                        </button>
+                    </div>
+                    <div id="route-info" aria-live="polite"></div>
+                    <div class="route-instructions">
+                        <small>
+                            🗺️ <strong>Instrucciones:</strong><br>
+                            1. Click en el mapa para marcar origen (🅰️)<br>
+                            2. Click en otro punto para destino (🅱️)<br>
+                            3. La ruta se calculará automáticamente<br>
+                            4. Arrastra los puntos para ajustar la ruta
+                        </small>
+                    </div>
+                </section>
+
+                <!-- Lista de Reportes -->
+                <section class="card">
+                    <h3>📋 Reportes Recientes</h3>
+                    <div id="reports-container" 
+                         hx-get="/api/reports" 
+                         hx-trigger="load, every 15s"
+                         aria-live="polite"
+                         aria-label="Lista de reportes actuales">
+                        <div class="loading">Cargando reportes...</div>
+                    </div>
+                    <div class="reports-footer">
+                        <small>🔄 Se actualiza automáticamente cada 15 segundos</small>
+                    </div>
+                </section>
+            </aside>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 GoWaze - Sistema de Navegación en Tiempo Real</p>
+            <p>
+                <small>
+                    Mapas por <a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">OpenStreetMap</a> |
+                    Geocodificación por <a href="https://nominatim.org/" target="_blank" rel="noopener">Nominatim</a> |
+                    Desarrollado con en Go
+                </small>
+            </p>
+        </div>
+    </footer>
+
+    <!-- JavaScript principal -->
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/aditional_functions.js"></script>
+    <script src="/static//js/offline_worker.js"></script>
+</body>
+</html>
