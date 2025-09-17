@@ -548,21 +548,4 @@ Message queues
 - **Idiomas:** Interface en español (fácil traducir)
 - **Coordenadas:** Sistema universal lat/lng
 
-¡Tu aplicación GoWaze ahora usa mapas reales y APIs externas! 🚗✨🗺️
-log.Fatal(http.ListenAndServe(":8081", r))
-```
-
-### Problemas de WebSocket
-Verifica que no haya firewall bloqueando el puerto 8080.
-
-### GPS no funciona
-El GPS solo funciona en HTTPS en producción. En desarrollo local (HTTP) algunos navegadores lo permiten.
-
-## 📝 Notas Técnicas
-
-- **Storage en memoria:** Los datos se pierden al reiniciar
-- **Coordenadas simuladas:** El mapa es una representación visual básica
-- **Sin autenticación:** Todas las operaciones son públicas
-- **Single instance:** No hay clustering ni balanceeo de carga
-
 ¡Disfruta explorando tu clon de Waze en Go! 🚗✨
